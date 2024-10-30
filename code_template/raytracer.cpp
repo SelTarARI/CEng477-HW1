@@ -1,8 +1,38 @@
 #include <iostream>
 #include "parser.h"
 #include "ppm.h"
+#include <cmath>
+#include <vector>
 
 typedef unsigned char RGB[3];
+
+typedef struct{
+    Vec3f origin;
+    Vec3f direction;
+} Ray;
+
+Ray generateRay(const Camera& cam, int i, int j) {
+    int z_sign;
+    if(cam.gaze.z < 0) {z_sign = -1;}
+    else {z_sign = 1;}
+
+    float left = cam.near_plane.x;
+    float right = cam.near_plane.y;
+    float bottom = cam.near_plane.z;
+    float top = cam.near_plane.w;
+
+    float pixel_width = abs((right - left) / cam.image_width);
+    float pixel_height = abs((top - bottom) / cam.image_height);
+
+    float target_x = left + ((i+.5)*pixel_width);
+    float target_y = top - ((j+.5)*pixel_height);
+    float target_z = cam.position.z + (z_sign * cam.near_distance);
+
+    Vec3f unit_ray;
+    unit_ray.x = target_x - cam.position.x;
+    unit_ray.y = target_y - cam.position.y;
+    unit_ray.z = target_z - cam.position.z;
+}
 
 int main(int argc, char* argv[])
 {
@@ -41,9 +71,9 @@ int main(int argc, char* argv[])
         for (int x = 0; x < width; ++x)
         {
             int colIdx = x / columnWidth;
-            image[i++] = BAR_COLOR[colIdx][0];
-            image[i++] = BAR_COLOR[colIdx][1];
-            image[i++] = BAR_COLOR[colIdx][2];
+            image[i++] = 255;
+            image[i++] = 0;
+            image[i++] = 255;
         }
     }
 
