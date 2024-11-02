@@ -11,6 +11,25 @@ typedef struct{
     Vec3f direction;
 } Ray;
 
+Vec3f normalize(const Vec3f& vec) {
+    float magnitude = std::sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
+    
+    if (magnitude == 0) {
+        // Handle zero magnitude vector, could return zero vector or throw an error
+        return Vec3f(0, 0, 0);
+    }
+    
+    return Vec3f(vec.x / magnitude, vec.y / magnitude, vec.z / magnitude);
+}
+
+Vec3f raySphereIntersection(Ray ray, Vec3f center, float radius){
+    
+}
+
+Vec3f rayIntersection(Ray ray) {
+
+}
+
 Ray generateRay(const Camera& cam, int i, int j) {
     int z_sign;
     if(cam.gaze.z < 0) {z_sign = -1;}
@@ -32,6 +51,10 @@ Ray generateRay(const Camera& cam, int i, int j) {
     unit_ray.x = target_x - cam.position.x;
     unit_ray.y = target_y - cam.position.y;
     unit_ray.z = target_z - cam.position.z;
+
+    unit_ray = normalize(unit_ray);
+
+    return unit_ray;
 }
 
 int main(int argc, char* argv[])
