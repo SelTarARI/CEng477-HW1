@@ -31,7 +31,7 @@ Vec3f raySphereIntersection(Ray ray, Vec3f center, float radius){
 
 using namespace parser;
 Vec3f rayIntersection(Ray ray) {
-
+    
 }
 
 using namespace parser;
@@ -98,10 +98,8 @@ int main(int argc, char* argv[])
     {
         for (int x = 0; x < width; ++x)
         {
-            int colIdx = x / columnWidth;
-            image[i++] = 255;
-            image[i++] = 0;
-            image[i++] = 255;
+            //int colIdx = x / columnWidth;
+            
         }
     }
 
