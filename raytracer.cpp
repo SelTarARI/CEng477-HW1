@@ -6,30 +6,35 @@
 
 typedef unsigned char RGB[3];
 
+using namespace parser;
 typedef struct{
     Vec3f origin;
     Vec3f direction;
 } Ray;
 
+using namespace parser;
 Vec3f normalize(const Vec3f& vec) {
     float magnitude = std::sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
-    
+    Vec3f zero = {0,0,0};
+    Vec3f normalize = {vec.x / magnitude, vec.y / magnitude, vec.z / magnitude};
     if (magnitude == 0) {
         // Handle zero magnitude vector, could return zero vector or throw an error
-        return Vec3f(0, 0, 0);
+        return zero;
     }
-    
-    return Vec3f(vec.x / magnitude, vec.y / magnitude, vec.z / magnitude);
+    return normalize;
 }
 
+using namespace parser;
 Vec3f raySphereIntersection(Ray ray, Vec3f center, float radius){
     
 }
 
+using namespace parser;
 Vec3f rayIntersection(Ray ray) {
 
 }
 
+using namespace parser;
 Ray generateRay(const Camera& cam, int i, int j) {
     int z_sign;
     if(cam.gaze.z < 0) {z_sign = -1;}
@@ -54,7 +59,7 @@ Ray generateRay(const Camera& cam, int i, int j) {
 
     unit_ray = normalize(unit_ray);
 
-    return unit_ray;
+    return {cam.position, unit_ray};
 }
 
 int main(int argc, char* argv[])
