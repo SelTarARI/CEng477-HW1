@@ -24,9 +24,43 @@ Vec3f normalize(const Vec3f& vec) {
     return normalize;
 }
 
+float dot(const Vec3f& u, const Vec3f& v) {
+    return (u.x*v.x + u.y*v.y + u.z*v.z);
+}
+
+Vec3f cross(const Vec3f& u, const Vec3f& v) {
+    return {u.y*v.z - u.z*v.y, u.z*v.x - u.x*v.z, u.x*v.y - u.y*v.x};
+}
+
+Vec3f minus(const Vec3f& u, const Vec3f& v) {
+    return {u.x - v.x, u.y - v.y, u.z - v.z};
+}
+
 using namespace parser;
 Vec3f raySphereIntersection(Ray ray, Vec3f center, float radius){
+    Vec3f oc = minus(ray.origin, center);
+    float a = dot(ray.direction, ray.direction);
+    float b = 2.0 * dot(oc, ray.direction);
+    float c = dot(oc, oc) - radius * radius;
+    float discriminant = b*b - 4*a*c;
+    if (discriminant < 0) {
+        return {0,0,0};
+    }
+    float t = (-b - std::sqrt(discriminant)) / (2.0 * a);
+    if (t < 0) {
+        return {0,0,0};
+    }
+    Vec3f intersection = {ray.origin.x + t * ray.direction.x, ray.origin.y + t * ray.direction.y, ray.origin.z + t * ray.direction.z};
+    return intersection;
+}
+
+using namespace parser;
+Vec3f rayTriangleIntersection(Ray ray, Vec3f triA, Vec3f triB, Vec3f triC) {
+    Vec3f edge1 = minus(triC, triB);
+    Vec3f edge2 = minus(triA, triB);
+    Vec3f n = cross(edge1, edge2);
     
+    return {0,0,0};
 }
 
 using namespace parser;
