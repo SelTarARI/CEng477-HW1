@@ -55,18 +55,35 @@ Vec3f raySphereIntersection(Ray ray, Vec3f center, float radius){
 }
 
 using namespace parser;
-Vec3f rayTriangleIntersection(Ray ray, Vec3f triA, Vec3f triB, Vec3f triC) {
-    Vec3f edge1 = minus(triC, triB);
-    Vec3f edge2 = minus(triA, triB);
-    Vec3f n = cross(edge1, edge2);
-    
+Vec3f rayTriangleIntersection(Ray ray, Vec3f triA, Vec3f triB, Vec3f triC){
+    Vec3f edge1 = minus(triB, triA);
+    Vec3f edge2 = minus(triC, triA);
+    Vec3f h = cross(ray.direction, edge2);
+    float a = dot(edge1, h);
+    if (a > -0.00001 && a < 0.00001) {
+        return {0,0,0};
+    }
+    float f = 1.0 / a;
+    Vec3f s = minus(ray.origin, triA);
+    float u = f * dot(s, h);
+    if (u < 0.0 || u > 1.0) {
+        return {0,0,0};
+    }
+    Vec3f q = cross(s, edge1);
+    float v = f * dot(ray.direction, q);
+    if (v < 0.0 || u + v > 1.0) {
+        return {0,0,0};
+    }
+    float t = f * dot(edge2, q);
+    if (t > 0.00001) {
+        Vec3f intersection = {ray.origin.x + t * ray.direction.x, ray.origin.y + t * ray.direction.y, ray.origin.z + t * ray.direction.z};
+        return intersection;
+    }
     return {0,0,0};
 }
 
 using namespace parser;
-Vec3f rayIntersection(Ray ray) {
-    
-}
+Vec3f rayIntersection(Ray ray) {}
 
 using namespace parser;
 Ray generateRay(const Camera& cam, int i, int j) {
