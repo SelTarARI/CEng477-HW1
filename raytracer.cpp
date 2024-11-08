@@ -110,36 +110,26 @@ Vec3f rayTriangleIntersection(Ray ray, Vec3f triA, Vec3f triB, Vec3f triC, bool&
     return p;
 }
 
-using namespace parser;
-Vec3f rayIntersection(Ray ray) {}
+//using namespace parser;
+//Vec3f rayIntersection(Ray ray) {}
 
 using namespace parser;
-Ray generateRay(const Camera& cam, int i, int j) {
-    int z_sign;
-    if(cam.gaze.z < 0) {z_sign = -1;}
-    else {z_sign = 1;}
-
-    float left = cam.near_plane.x;
-    float right = cam.near_plane.y;
-    float bottom = cam.near_plane.z;
-    float top = cam.near_plane.w;
-
-    float pixel_width = abs((right - left) / cam.image_width);
-    float pixel_height = abs((top - bottom) / cam.image_height);
-
-    float target_x = left + ((i+.5)*pixel_width);
-    float target_y = top - ((j+.5)*pixel_height);
-    float target_z = cam.position.z + (z_sign * cam.near_distance);
-
-    Vec3f unit_ray;
-    unit_ray.x = target_x - cam.position.x;
-    unit_ray.y = target_y - cam.position.y;
-    unit_ray.z = target_z - cam.position.z;
-
-    unit_ray = normalize(unit_ray);
-
-    return {cam.position, unit_ray};
+Ray generateRay(Camera camera, int x, int y) {
+    Vec3f w = normalize(minus(camera.position, camera.gaze));
+    Vec3f u = normalize(cross(camera.up, w));
+    Vec3f v = cross(w, u);
+    float aspectRatio = (float)camera.image_width / camera.image_height;
+    float top = camera.near_plane.w;
+    float right = top * aspectRatio;
+    float bottom = -top;
+    float left = -right;
+    float uCoord = left + (right - left) * (x + 0.5) / camera.image_width;
+    float vCoord = bottom + (top - bottom) * (y + 0.5) / camera.image_height;
+    Vec3f direction = plus(timesScalar(w, -camera.near_distance), plus(timesScalar(u, uCoord), timesScalar(v, vCoord)));
+    return {camera.position, normalize(direction)};
 }
+
+
 
 int main(int argc, char* argv[])
 {
@@ -155,48 +145,44 @@ int main(int argc, char* argv[])
     // Normally, you would be running your ray tracing
     // code here to produce the desired image.
 
-    const RGB BAR_COLOR[8] =
-    {
-        { 255, 255, 255 },  // 100% White
-        { 255, 255,   0 },  // Yellow
-        {   0, 255, 255 },  // Cyan
-        {   0, 255,   0 },  // Green
-        { 255,   0, 255 },  // Magenta
-        { 255,   0,   0 },  // Red
-        {   0,   0, 255 },  // Blue
-        {   0,   0,   0 },  // Black
-    };
 
-    int width = 640, height = 480;
-    int columnWidth = width / 8;
-
-    unsigned char* image = new unsigned char [width * height * 3];
 
     for (int j =0; j < scene.cameras.size(); j++) {
-        std::cout << scene.cameras[0].image_name << std::endl;
-    }
+        int width = scene.cameras[j].image_width;
+        int height = scene.cameras[j].image_height;
+        unsigned char* image = new unsigned char[width * height * 3];
+        std::cout << (scene.cameras[j].image_name) << std::endl;
 
-    int i = 0;
-    for (int y = 0; y < height; ++y)
-    {
-        for (int x = 0; x < width; ++x)
+        int i = 0;
+        for (int y = 0; y < height; ++y)
         {
-            //int colIdx = x / columnWidth;
-            bool hit;
-            Ray ray = generateRay(scene.cameras[0], x, y);
-            Vec3f coordinate = raySphereIntersection(ray, scene.vertex_data[scene.spheres[0].center_vertex_id], scene.spheres[0].radius, hit);
-            if (coordinate.x != 0 && coordinate.y != 0 && coordinate.z != 0) {
-                image[i++] = 255;
-                image[i++] = 255;
-                image[i++] = 255;
-            } else {
-                image[i++] = 0;
-                image[i++] = 0;
-                image[i++] = 255;
+            for (int x = 0; x < width; ++x)
+            {
+                bool hit=false;
+
+                Ray ray = generateRay(scene.cameras[0], x, y);
+                //printf("Ray Origin: %f %f %f\n", ray.origin.x, ray.origin.y, ray.origin.z);
+                //printf("Ray Direction: %f %f %f\n", ray.direction.x, ray.direction.y, ray.direction.z);
+                Vec3f coordinate = raySphereIntersection(ray, scene.vertex_data[scene.spheres[0].center_vertex_id], scene.spheres[0].radius, hit);
+                //Vec3f triA = scene.vertex_data[scene.meshes[0].faces[0].v0_id];
+                //Vec3f triB = scene.vertex_data[scene.meshes[0].faces[0].v1_id];
+                //Vec3f triC = scene.vertex_data[scene.meshes[0].faces[0].v2_id];
+                //Vec3f coordinateTri = rayTriangleIntersection(ray, triA, triB, triC, hit);
+
+                if (hit) { //red
+                    printf("Hit\n");
+                    image[i++] = 255;
+                    image[i++] = 0;
+                    image[i++] = 0;
+                } else { //blue
+                    image[i++] = 0;
+                    image[i++] = 0;
+                    image[i++] = 255;
+                }
             }
         }
+        write_ppm("test.ppm", image, width, height);
     }
 
-    write_ppm("test.ppm", image, width, height);
 
 }
