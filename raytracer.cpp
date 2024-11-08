@@ -36,29 +36,78 @@ Vec3f minus(const Vec3f& u, const Vec3f& v) {
     return {u.x - v.x, u.y - v.y, u.z - v.z};
 }
 
+Vec3f plus(const Vec3f& u, const Vec3f& v) {
+    return {u.x + v.x, u.y + v.y, u.z + v.z};
+}
+
+Vec3f timesScalar(const Vec3f& u, float t) {
+    return {u.x * t, u.y * t, u.z * t};
+}
+
+Vec3f negate(const Vec3f& u) {
+    return {-u.x, -u.y, -u.z};
+}
+
 using namespace parser;
-Vec3f raySphereIntersection(Ray ray, Vec3f center, float radius){
+Vec3f raySphereIntersection(Ray ray, Vec3f center, float radius, bool& hit) {
     Vec3f oc = minus(ray.origin, center);
     float a = dot(ray.direction, ray.direction);
     float b = 2.0 * dot(oc, ray.direction);
     float c = dot(oc, oc) - radius * radius;
     float discriminant = b*b - 4*a*c;
     if (discriminant < 0) {
+        hit = false;
         return {0,0,0};
     }
     float t = (-b - std::sqrt(discriminant)) / (2.0 * a);
     if (t < 0) {
+        hit = false;
         return {0,0,0};
     }
-    Vec3f intersection = {ray.origin.x + t * ray.direction.x, ray.origin.y + t * ray.direction.y, ray.origin.z + t * ray.direction.z};
+    Vec3f intersection = plus(ray.origin, timesScalar(ray.direction, t));
+    hit = true;
     return intersection;
 }
 
 using namespace parser;
-Vec3f rayTriangleIntersection(Ray ray, Vec3f triA, Vec3f triB, Vec3f triC){
+Vec3f rayTriangleIntersection(Ray ray, Vec3f triA, Vec3f triB, Vec3f triC, bool& hit){
     Vec3f edge1 = minus(triB, triA);
     Vec3f edge2 = minus(triC, triA);
-    
+    Vec3f n = cross(edge1, edge2);
+
+    float nDotRayDirection = dot(n, ray.direction);
+    if (nDotRayDirection == 0) {
+        hit = false;
+        return {0,0,0};
+    }
+
+    float d = dot(n, triA);
+    float t = -(dot(n, ray.origin) + d) / nDotRayDirection;
+    if (t < 0) {
+        hit = false;
+        return {0,0,0};
+    }
+
+    Vec3f p = plus(ray.origin, timesScalar(ray.direction, t));
+    Vec3f c;
+    Vec3f edge3 = minus(triC, triB);
+    Vec3f p_triB = minus(p, triB);
+    c = cross(edge3, p_triB);
+    if (dot(n, c) < 0) {
+        hit = false;
+        return {0,0,0};
+    }
+
+    Vec3f edge2Minus = negate(edge2);
+    Vec3f p_triC = minus(p, triC);
+    c = cross(edge2Minus, p_triC);
+    if (dot(n, c) < 0) {
+        hit = false;
+        return {0,0,0};
+    }
+
+    hit = true;
+    return p;
 }
 
 using namespace parser;
@@ -123,13 +172,28 @@ int main(int argc, char* argv[])
 
     unsigned char* image = new unsigned char [width * height * 3];
 
+    for (int j =0; j < scene.cameras.size(); j++) {
+        std::cout << scene.cameras[0].image_name << std::endl;
+    }
+
     int i = 0;
     for (int y = 0; y < height; ++y)
     {
         for (int x = 0; x < width; ++x)
         {
             //int colIdx = x / columnWidth;
-            
+            bool hit;
+            Ray ray = generateRay(scene.cameras[0], x, y);
+            Vec3f coordinate = raySphereIntersection(ray, scene.vertex_data[scene.spheres[0].center_vertex_id], scene.spheres[0].radius, hit);
+            if (coordinate.x != 0 && coordinate.y != 0 && coordinate.z != 0) {
+                image[i++] = 255;
+                image[i++] = 255;
+                image[i++] = 255;
+            } else {
+                image[i++] = 0;
+                image[i++] = 0;
+                image[i++] = 255;
+            }
         }
     }
 
