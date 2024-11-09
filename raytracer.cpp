@@ -7,6 +7,7 @@
 typedef unsigned char RGB[3];
 
 using namespace parser;
+
 typedef struct
 {
     Vec3f origin;
@@ -21,7 +22,6 @@ typedef struct
     bool hitHappened = false;
 } Hit;
 
-using namespace parser;
 Vec3f normalize(const Vec3f &vec)
 {
     float magnitude = std::sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
@@ -65,7 +65,11 @@ Vec3f negate(const Vec3f &u)
     return {-u.x, -u.y, -u.z};
 }
 
-using namespace parser;
+float distance(Vec3f a, Vec3f b)
+{
+    return sqrt(pow(a.x - b.x, 2) + pow(a.y - b.y, 2) + pow(a.z - b.z, 2));
+}
+
 Vec3f raySphereIntersection(Ray ray, Vec3f center, float radius, bool &hit)
 {
     Vec3f oc = minus(ray.origin, center);
@@ -89,7 +93,6 @@ Vec3f raySphereIntersection(Ray ray, Vec3f center, float radius, bool &hit)
     return intersection;
 }
 
-using namespace parser;
 Vec3f rayTriangleIntersection(Ray ray, Vec3f triA, Vec3f triB, Vec3f triC, bool &hit)
 {
     Vec3f edge1 = minus(triB, triA);
@@ -128,6 +131,7 @@ Vec3f rayTriangleIntersection(Ray ray, Vec3f triA, Vec3f triB, Vec3f triC, bool 
 
 Vec3f rayMeshIntersection(Ray ray, Scene scene, int meshIndex, bool &hit)
 {
+    bool first = true;
     Mesh mesh = scene.meshes[meshIndex];
     Vec3f intersection = {0, 0, 0};
     for (int i = 0; i < mesh.faces.size(); i++)
@@ -139,14 +143,20 @@ Vec3f rayMeshIntersection(Ray ray, Scene scene, int meshIndex, bool &hit)
         Vec3f coordinate = rayTriangleIntersection(ray, v0, v1, v2, hit);
         if (hit)
         {
-            intersection = coordinate;
-            break;
+            if(first){
+                intersection = coordinate;
+                first = false;
+            }
+            else{
+                if(distance(ray.origin, coordinate) < distance(ray.origin, intersection)){
+                    intersection = coordinate;
+                }
+            }
         }
     }
     return intersection;
 }
 
-using namespace parser;
 Ray generateRay(Camera camera, int x, int y)
 {
     Vec3f w = normalize(minus(camera.position, camera.gaze));
@@ -161,12 +171,6 @@ Ray generateRay(Camera camera, int x, int y)
     float vCoord = top - (top - bottom) * (y + 0.5) / camera.image_height;
     Vec3f direction = plus(timesScalar(w, -camera.near_distance), plus(timesScalar(u, uCoord), timesScalar(v, vCoord)));
     return {camera.position, direction};
-}
-
-using namespace parser;
-float distance(Vec3f a, Vec3f b)
-{
-    return sqrt(pow(a.x - b.x, 2) + pow(a.y - b.y, 2) + pow(a.z - b.z, 2));
 }
 
 int main(int argc, char *argv[])
@@ -193,7 +197,10 @@ int main(int argc, char *argv[])
                 Hit hitTriangle;
                 Hit hitTriangleFinal;
                 Hit hitMesh;
+                Hit hitMeshFinal;
                 bool sphereHitFirst = true;
+                bool triangleHitFirst = true;
+                bool meshHitFirst = true;
 
                 for (int k = 0; k < scene.spheres.size(); k++)
                 {
@@ -234,6 +241,21 @@ int main(int argc, char *argv[])
                         hitTriangle.hitpoint = coordinate;
                         hitTriangle.normal = normalize(cross(minus(v1, v0), minus(v2, v0)));
                         hitTriangle.color = scene.materials[scene.triangles[k].material_id - 1].diffuse;
+                        if(triangleHitFirst){
+                            hitTriangleFinal.hitpoint = hitTriangle.hitpoint;
+                            hitTriangleFinal.normal = hitTriangle.normal;
+                            hitTriangleFinal.color = hitTriangle.color;
+                            hitTriangleFinal.hitHappened = true;
+                            triangleHitFirst = false;
+                        }
+                        else{
+                            if(distance(ray.origin, hitTriangle.hitpoint) < distance(ray.origin, hitTriangleFinal.hitpoint)){
+                                hitTriangleFinal.hitpoint = hitTriangle.hitpoint;
+                                hitTriangleFinal.normal = hitTriangle.normal;
+                                hitTriangleFinal.color = hitTriangle.color;
+                                hitTriangleFinal.hitHappened = true;
+                            }
+                        }
                     }
                 }
 
@@ -248,6 +270,21 @@ int main(int argc, char *argv[])
                         hitMesh.hitpoint = coordinate;
                         hitMesh.normal = normalize(cross(minus(v1, v0), minus(v2, v0)));
                         hitMesh.color = scene.materials[scene.meshes[k].material_id - 1].diffuse;
+                        if(meshHitFirst){
+                            hitMeshFinal.hitpoint = hitMesh.hitpoint;
+                            hitMeshFinal.normal = hitMesh.normal;
+                            hitMeshFinal.color = hitMesh.color;
+                            hitMeshFinal.hitHappened = true;
+                            meshHitFirst = false;
+                        }
+                        else{
+                            if(distance(ray.origin, hitMesh.hitpoint) < distance(ray.origin, hitMeshFinal.hitpoint)){
+                                hitMeshFinal.hitpoint = hitMesh.hitpoint;
+                                hitMeshFinal.normal = hitMesh.normal;
+                                hitMeshFinal.color = hitMesh.color;
+                                hitMeshFinal.hitHappened = true;
+                            }
+                        }
                     }
                 }
 
@@ -258,14 +295,14 @@ int main(int argc, char *argv[])
                     image[i++] = color.y * 255;
                     image[i++] = color.z * 255;
                 }
-                else if (hitTriangle.hitHappened)
+                else if (hitTriangleFinal.hitHappened)
                 {
                     Vec3f color = hitTriangle.color;
                     image[i++] = color.x * 255;
                     image[i++] = color.y * 255;
                     image[i++] = color.z * 255;
                 }
-                else if (hitMesh.hitHappened)
+                else if (hitMeshFinal.hitHappened)
                 {
                     Vec3f color = hitMesh.color;
                     image[i++] = color.x * 255;
