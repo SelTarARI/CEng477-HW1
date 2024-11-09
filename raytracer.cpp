@@ -335,11 +335,10 @@ int main(int argc, char *argv[])
                 }
 
                 Vec3f finalColor = {0, 0, 0};
-                finalColor = timesForColor(finalHit.material.ambient, scene.ambient_light);
 
-                // point light diffuse
                 for (int k = 0; k < scene.point_lights.size(); k++)
                 {
+                    // point light diffuse
                     Vec3f lightPosition = scene.point_lights[k].position;
                     Vec3f lightIntensity = scene.point_lights[k].intensity;
                     Vec3f lightDirection = normalize(minus(lightPosition, finalHit.hitpoint));
@@ -351,7 +350,24 @@ int main(int argc, char *argv[])
                     float oneOverDistanceSquare = 1 / pow(distance(lightPosition, finalHit.hitpoint), 2);
                     Vec3f radiance = timesForColor(timesScalar(lightIntensity, oneOverDistanceSquare * cosTheta), diffuseCoefficient);
                     finalColor = plus(finalColor, radiance);
+
+                    // specular reflection
+                    Vec3f viewDirection = normalize(minus(ray.origin, finalHit.hitpoint));
+                    Vec3f halfVector = normalize(plus(lightDirection, viewDirection));
+                    float normalDotHalf = dot(normal, halfVector);
+                    float cosAlpha = std::max(0.0f, normalDotHalf);
+                    Vec3f specularCoefficient = finalHit.material.specular;
+                    float phongExponent = finalHit.material.phong_exponent;
+                    Vec3f specularRadiance = timesForColor(timesScalar(lightIntensity, oneOverDistanceSquare *
+                                                                                           pow(cosAlpha, phongExponent)),
+                                                           specularCoefficient);
+                    finalColor = plus(finalColor, specularRadiance);
+
+                    // shadow ray
+                    
                 }
+
+                finalColor = plus(finalColor, timesForColor(finalHit.material.ambient, scene.ambient_light));
 
                 Vec3f color = finalColor;
                 image[i++] = color.x > 255 ? 255 : color.x;
