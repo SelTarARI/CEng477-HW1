@@ -16,7 +16,7 @@ typedef struct
 {
     Vec3f hitpoint;
     Vec3f normal;
-    Vec3f color;
+    Material material;
     bool hitHappened = false;
 } Hit;
 
@@ -56,6 +56,11 @@ Vec3f plus(const Vec3f &u, const Vec3f &v)
 Vec3f timesScalar(const Vec3f &u, float t)
 {
     return {u.x * t, u.y * t, u.z * t};
+}
+
+Vec3f timesForColor(const Vec3f &u, const Vec3f &v)
+{
+    return {u.x * v.x, u.y * v.y, u.z * v.z};
 }
 
 Vec3f negate(const Vec3f &u)
@@ -223,12 +228,12 @@ int main(int argc, char *argv[])
                     {
                         hitSphere.hitpoint = coordinate;
                         hitSphere.normal = normalize(minus(coordinate, center));
-                        hitSphere.color = scene.materials[scene.spheres[k].material_id - 1].diffuse;
+                        hitSphere.material = scene.materials[scene.spheres[k].material_id - 1];
                         if (sphereHitFirst)
                         {
                             hitSphereFinal.hitpoint = hitSphere.hitpoint;
                             hitSphereFinal.normal = hitSphere.normal;
-                            hitSphereFinal.color = hitSphere.color;
+                            hitSphereFinal.material = hitSphere.material;
                             hitSphereFinal.hitHappened = true;
                             sphereHitFirst = false;
                         }
@@ -238,7 +243,7 @@ int main(int argc, char *argv[])
                             {
                                 hitSphereFinal.hitpoint = hitSphere.hitpoint;
                                 hitSphereFinal.normal = hitSphere.normal;
-                                hitSphereFinal.color = hitSphere.color;
+                                hitSphereFinal.material = hitSphere.material;
                                 hitSphereFinal.hitHappened = true;
                             }
                         }
@@ -255,12 +260,12 @@ int main(int argc, char *argv[])
                     {
                         hitTriangle.hitpoint = coordinate;
                         hitTriangle.normal = normalize(cross(minus(v1, v0), minus(v2, v0)));
-                        hitTriangle.color = scene.materials[scene.triangles[k].material_id - 1].diffuse;
+                        hitTriangle.material = scene.materials[scene.triangles[k].material_id - 1];
                         if (triangleHitFirst)
                         {
                             hitTriangleFinal.hitpoint = hitTriangle.hitpoint;
                             hitTriangleFinal.normal = hitTriangle.normal;
-                            hitTriangleFinal.color = hitTriangle.color;
+                            hitTriangleFinal.material = hitTriangle.material;
                             hitTriangleFinal.hitHappened = true;
                             triangleHitFirst = false;
                         }
@@ -270,7 +275,7 @@ int main(int argc, char *argv[])
                             {
                                 hitTriangleFinal.hitpoint = hitTriangle.hitpoint;
                                 hitTriangleFinal.normal = hitTriangle.normal;
-                                hitTriangleFinal.color = hitTriangle.color;
+                                hitTriangleFinal.material = hitTriangle.material;
                                 hitTriangleFinal.hitHappened = true;
                             }
                         }
@@ -287,12 +292,12 @@ int main(int argc, char *argv[])
                     {
                         hitMesh.hitpoint = coordinate;
                         hitMesh.normal = normalize(cross(minus(v1, v0), minus(v2, v0)));
-                        hitMesh.color = scene.materials[scene.meshes[k].material_id - 1].diffuse;
+                        hitMesh.material = scene.materials[scene.meshes[k].material_id - 1];
                         if (meshHitFirst)
                         {
                             hitMeshFinal.hitpoint = hitMesh.hitpoint;
                             hitMeshFinal.normal = hitMesh.normal;
-                            hitMeshFinal.color = hitMesh.color;
+                            hitMeshFinal.material = hitMesh.material;
                             hitMeshFinal.hitHappened = true;
                             meshHitFirst = false;
                         }
@@ -302,7 +307,7 @@ int main(int argc, char *argv[])
                             {
                                 hitMeshFinal.hitpoint = hitMesh.hitpoint;
                                 hitMeshFinal.normal = hitMesh.normal;
-                                hitMeshFinal.color = hitMesh.color;
+                                hitMeshFinal.material = hitMesh.material;
                                 hitMeshFinal.hitHappened = true;
                             }
                         }
@@ -320,19 +325,38 @@ int main(int argc, char *argv[])
                     finalHit = hitMeshFinal;
                 }
 
-                if (finalHit.hitHappened)
+                if (!finalHit.hitHappened)
                 {
-                    Vec3f color = finalHit.color;
-                    image[i++] = color.x * 255;
-                    image[i++] = color.y * 255;
-                    image[i++] = color.z * 255;
+                    Vec3i color = scene.background_color;
+                    image[i++] = color.x;
+                    image[i++] = color.y;
+                    image[i++] = color.z;
+                    continue;
                 }
-                else
+
+                Vec3f finalColor = {0, 0, 0};
+                finalColor = timesForColor(finalHit.material.ambient, scene.ambient_light);
+
+                // point light diffuse
+                for (int k = 0; k < scene.point_lights.size(); k++)
                 {
-                    image[i++] = scene.background_color.x;
-                    image[i++] = scene.background_color.y;
-                    image[i++] = scene.background_color.z;
+                    Vec3f lightPosition = scene.point_lights[k].position;
+                    Vec3f lightIntensity = scene.point_lights[k].intensity;
+                    Vec3f lightDirection = normalize(minus(lightPosition, finalHit.hitpoint));
+                    Vec3f diffuseCoefficient = finalHit.material.diffuse;
+                    Vec3f normal = finalHit.normal;
+
+                    float normalDotLight = dot(normal, lightDirection);
+                    float cosTheta = std::max(0.0f, normalDotLight);
+                    float oneOverDistanceSquare = 1 / pow(distance(lightPosition, finalHit.hitpoint), 2);
+                    Vec3f radiance = timesForColor(timesScalar(lightIntensity, oneOverDistanceSquare * cosTheta), diffuseCoefficient);
+                    finalColor = plus(finalColor, radiance);
                 }
+
+                Vec3f color = finalColor;
+                image[i++] = color.x > 255 ? 255 : color.x;
+                image[i++] = color.y > 255 ? 255 : color.y;
+                image[i++] = color.z > 255 ? 255 : color.z;
             }
         }
         write_ppm(scene.cameras[j].image_name.c_str(), image, width, height);
