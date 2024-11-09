@@ -4,8 +4,6 @@
 #include <cmath>
 #include <vector>
 
-typedef unsigned char RGB[3];
-
 using namespace parser;
 
 typedef struct
@@ -131,7 +129,7 @@ Vec3f rayTriangleIntersection(Ray ray, Vec3f triA, Vec3f triB, Vec3f triC, bool 
 
 Vec3f rayMeshIntersection(Ray ray, Scene scene, int meshIndex, bool &hit)
 {
-    bool first = true;
+    std::vector<Vec3f> hitList;
     Mesh mesh = scene.meshes[meshIndex];
     Vec3f intersection = {0, 0, 0};
     for (int i = 0; i < mesh.faces.size(); i++)
@@ -143,14 +141,26 @@ Vec3f rayMeshIntersection(Ray ray, Scene scene, int meshIndex, bool &hit)
         Vec3f coordinate = rayTriangleIntersection(ray, v0, v1, v2, hit);
         if (hit)
         {
-            if(first){
-                intersection = coordinate;
-                first = false;
-            }
-            else{
-                if(distance(ray.origin, coordinate) < distance(ray.origin, intersection)){
-                    intersection = coordinate;
-                }
+            hitList.push_back(coordinate);
+        }
+    }
+    if (hitList.size() == 0)
+    {
+        hit = false;
+        return {0, 0, 0};
+    }
+    hit = true;
+    for (int i = 0; i < hitList.size(); i++)
+    {
+        if (i == 0)
+        {
+            intersection = hitList[i];
+        }
+        else
+        {
+            if (distance(ray.origin, hitList[i]) < distance(ray.origin, intersection))
+            {
+                intersection = hitList[i];
             }
         }
     }
@@ -194,12 +204,14 @@ int main(int argc, char *argv[])
 
                 Hit hitSphere;
                 Hit hitSphereFinal;
+                bool sphereHitFirst = true;
+
                 Hit hitTriangle;
                 Hit hitTriangleFinal;
+                bool triangleHitFirst = true;
+
                 Hit hitMesh;
                 Hit hitMeshFinal;
-                bool sphereHitFirst = true;
-                bool triangleHitFirst = true;
                 bool meshHitFirst = true;
 
                 for (int k = 0; k < scene.spheres.size(); k++)
@@ -212,15 +224,18 @@ int main(int argc, char *argv[])
                         hitSphere.hitpoint = coordinate;
                         hitSphere.normal = normalize(minus(coordinate, center));
                         hitSphere.color = scene.materials[scene.spheres[k].material_id - 1].diffuse;
-                        if(sphereHitFirst){
+                        if (sphereHitFirst)
+                        {
                             hitSphereFinal.hitpoint = hitSphere.hitpoint;
                             hitSphereFinal.normal = hitSphere.normal;
                             hitSphereFinal.color = hitSphere.color;
                             hitSphereFinal.hitHappened = true;
                             sphereHitFirst = false;
                         }
-                        else{
-                            if(distance(ray.origin, hitSphere.hitpoint) < distance(ray.origin, hitSphereFinal.hitpoint)){
+                        else
+                        {
+                            if (distance(ray.origin, hitSphere.hitpoint) < distance(ray.origin, hitSphereFinal.hitpoint))
+                            {
                                 hitSphereFinal.hitpoint = hitSphere.hitpoint;
                                 hitSphereFinal.normal = hitSphere.normal;
                                 hitSphereFinal.color = hitSphere.color;
@@ -241,15 +256,18 @@ int main(int argc, char *argv[])
                         hitTriangle.hitpoint = coordinate;
                         hitTriangle.normal = normalize(cross(minus(v1, v0), minus(v2, v0)));
                         hitTriangle.color = scene.materials[scene.triangles[k].material_id - 1].diffuse;
-                        if(triangleHitFirst){
+                        if (triangleHitFirst)
+                        {
                             hitTriangleFinal.hitpoint = hitTriangle.hitpoint;
                             hitTriangleFinal.normal = hitTriangle.normal;
                             hitTriangleFinal.color = hitTriangle.color;
                             hitTriangleFinal.hitHappened = true;
                             triangleHitFirst = false;
                         }
-                        else{
-                            if(distance(ray.origin, hitTriangle.hitpoint) < distance(ray.origin, hitTriangleFinal.hitpoint)){
+                        else
+                        {
+                            if (distance(ray.origin, hitTriangle.hitpoint) < distance(ray.origin, hitTriangleFinal.hitpoint))
+                            {
                                 hitTriangleFinal.hitpoint = hitTriangle.hitpoint;
                                 hitTriangleFinal.normal = hitTriangle.normal;
                                 hitTriangleFinal.color = hitTriangle.color;
@@ -270,15 +288,18 @@ int main(int argc, char *argv[])
                         hitMesh.hitpoint = coordinate;
                         hitMesh.normal = normalize(cross(minus(v1, v0), minus(v2, v0)));
                         hitMesh.color = scene.materials[scene.meshes[k].material_id - 1].diffuse;
-                        if(meshHitFirst){
+                        if (meshHitFirst)
+                        {
                             hitMeshFinal.hitpoint = hitMesh.hitpoint;
                             hitMeshFinal.normal = hitMesh.normal;
                             hitMeshFinal.color = hitMesh.color;
                             hitMeshFinal.hitHappened = true;
                             meshHitFirst = false;
                         }
-                        else{
-                            if(distance(ray.origin, hitMesh.hitpoint) < distance(ray.origin, hitMeshFinal.hitpoint)){
+                        else
+                        {
+                            if (distance(ray.origin, hitMesh.hitpoint) < distance(ray.origin, hitMeshFinal.hitpoint))
+                            {
                                 hitMeshFinal.hitpoint = hitMesh.hitpoint;
                                 hitMeshFinal.normal = hitMesh.normal;
                                 hitMeshFinal.color = hitMesh.color;
@@ -288,23 +309,20 @@ int main(int argc, char *argv[])
                     }
                 }
 
-                if (hitSphereFinal.hitHappened)
+                Hit finalHit = hitSphereFinal;
+
+                if (hitTriangleFinal.hitHappened & (!finalHit.hitHappened || distance(ray.origin, hitTriangleFinal.hitpoint) < distance(ray.origin, finalHit.hitpoint)))
                 {
-                    Vec3f color = hitSphere.color;
-                    image[i++] = color.x * 255;
-                    image[i++] = color.y * 255;
-                    image[i++] = color.z * 255;
+                    finalHit = hitTriangleFinal;
                 }
-                else if (hitTriangleFinal.hitHappened)
+                if (hitMeshFinal.hitHappened & (!finalHit.hitHappened || distance(ray.origin, hitMeshFinal.hitpoint) < distance(ray.origin, finalHit.hitpoint)))
                 {
-                    Vec3f color = hitTriangle.color;
-                    image[i++] = color.x * 255;
-                    image[i++] = color.y * 255;
-                    image[i++] = color.z * 255;
+                    finalHit = hitMeshFinal;
                 }
-                else if (hitMeshFinal.hitHappened)
+
+                if (finalHit.hitHappened)
                 {
-                    Vec3f color = hitMesh.color;
+                    Vec3f color = finalHit.color;
                     image[i++] = color.x * 255;
                     image[i++] = color.y * 255;
                     image[i++] = color.z * 255;

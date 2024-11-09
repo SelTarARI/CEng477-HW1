@@ -1,0 +1,29 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "C++ Debug (raytracer)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}\\raytracer.exe",
+            "args": [
+                "C:\\Users\\selta\\OneDrive\\Documents\\GitHub\\CEng477-HW1\\test_scenes\\inputs\\simple.xml"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": true,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "build",
+            "miDebuggerPath": "C:\\MinGW\\bin\\gdb.exe",
+            "internalConsoleOptions": "neverOpen"
+        }
+    ]
+}
