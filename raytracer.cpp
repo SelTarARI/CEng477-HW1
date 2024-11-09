@@ -13,6 +13,14 @@ typedef struct
     Vec3f direction;
 } Ray;
 
+typedef struct
+{
+    Vec3f hitpoint;
+    Vec3f normal;
+    Vec3f color;
+    bool hitHappened = false;
+} Hit;
+
 using namespace parser;
 Vec3f normalize(const Vec3f &vec)
 {
@@ -138,7 +146,6 @@ Vec3f rayMeshIntersection(Ray ray, Scene scene, int meshIndex, bool &hit)
     return intersection;
 }
 
-
 using namespace parser;
 Ray generateRay(Camera camera, int x, int y)
 {
@@ -156,9 +163,14 @@ Ray generateRay(Camera camera, int x, int y)
     return {camera.position, direction};
 }
 
+using namespace parser;
+float distance(Vec3f a, Vec3f b)
+{
+    return sqrt(pow(a.x - b.x, 2) + pow(a.y - b.y, 2) + pow(a.z - b.z, 2));
+}
+
 int main(int argc, char *argv[])
 {
-    // Sample usage for reading an XML scene file
     parser::Scene scene;
 
     scene.loadFromXml(argv[1]);
@@ -168,40 +180,103 @@ int main(int argc, char *argv[])
         int width = scene.cameras[j].image_width;
         int height = scene.cameras[j].image_height;
         unsigned char *image = new unsigned char[width * height * 3];
-        std::cout << (scene.cameras[j].image_name) << std::endl;
 
         int i = 0;
         for (int y = 0; y < height; ++y)
         {
             for (int x = 0; x < width; ++x)
             {
-                bool hit2 = false;
                 Ray ray = generateRay(scene.cameras[j], x, y);
-                Vec3f intersection = rayMeshIntersection(ray, scene, 0, hit2);
 
-                bool hit1 = false;
+                Hit hitSphere;
+                Hit hitSphereFinal;
+                Hit hitTriangle;
+                Hit hitTriangleFinal;
+                Hit hitMesh;
+                bool sphereHitFirst = true;
 
-                Vec3f center = scene.vertex_data[scene.spheres[0].center_vertex_id - 1];
-                float radius = scene.spheres[0].radius;
-                Vec3f coordinate = raySphereIntersection(ray, center, radius, hit1);
-
-                bool hit = false;
-                Vec3f v0 = scene.vertex_data[scene.triangles[0].indices.v0_id - 1];
-                Vec3f v1 = scene.vertex_data[scene.triangles[0].indices.v1_id - 1];
-                Vec3f v2 = scene.vertex_data[scene.triangles[0].indices.v2_id - 1];
-                Vec3f coordinateTri = rayTriangleIntersection(ray, v0, v1, v2, hit);
-
-                if (hit || hit1 || hit2)
+                for (int k = 0; k < scene.spheres.size(); k++)
                 {
-                    image[i++] = 255;
-                    image[i++] = 255;
-                    image[i++] = 255;
+                    Vec3f center = scene.vertex_data[scene.spheres[k].center_vertex_id - 1];
+                    float radius = scene.spheres[k].radius;
+                    Vec3f coordinate = raySphereIntersection(ray, center, radius, hitSphere.hitHappened);
+                    if (hitSphere.hitHappened)
+                    {
+                        hitSphere.hitpoint = coordinate;
+                        hitSphere.normal = normalize(minus(coordinate, center));
+                        hitSphere.color = scene.materials[scene.spheres[k].material_id - 1].diffuse;
+                        if(sphereHitFirst){
+                            hitSphereFinal.hitpoint = hitSphere.hitpoint;
+                            hitSphereFinal.normal = hitSphere.normal;
+                            hitSphereFinal.color = hitSphere.color;
+                            hitSphereFinal.hitHappened = true;
+                            sphereHitFirst = false;
+                        }
+                        else{
+                            if(distance(ray.origin, hitSphere.hitpoint) < distance(ray.origin, hitSphereFinal.hitpoint)){
+                                hitSphereFinal.hitpoint = hitSphere.hitpoint;
+                                hitSphereFinal.normal = hitSphere.normal;
+                                hitSphereFinal.color = hitSphere.color;
+                                hitSphereFinal.hitHappened = true;
+                            }
+                        }
+                    }
+                }
+
+                for (int k = 0; k < scene.triangles.size(); k++)
+                {
+                    Vec3f v0 = scene.vertex_data[scene.triangles[k].indices.v0_id - 1];
+                    Vec3f v1 = scene.vertex_data[scene.triangles[k].indices.v1_id - 1];
+                    Vec3f v2 = scene.vertex_data[scene.triangles[k].indices.v2_id - 1];
+                    Vec3f coordinate = rayTriangleIntersection(ray, v0, v1, v2, hitTriangle.hitHappened);
+                    if (hitTriangle.hitHappened)
+                    {
+                        hitTriangle.hitpoint = coordinate;
+                        hitTriangle.normal = normalize(cross(minus(v1, v0), minus(v2, v0)));
+                        hitTriangle.color = scene.materials[scene.triangles[k].material_id - 1].diffuse;
+                    }
+                }
+
+                for (int k = 0; k < scene.meshes.size(); k++)
+                {
+                    Vec3f v0 = scene.vertex_data[scene.meshes[k].faces[0].v0_id - 1];
+                    Vec3f v1 = scene.vertex_data[scene.meshes[k].faces[0].v1_id - 1];
+                    Vec3f v2 = scene.vertex_data[scene.meshes[k].faces[0].v2_id - 1];
+                    Vec3f coordinate = rayMeshIntersection(ray, scene, k, hitMesh.hitHappened);
+                    if (hitMesh.hitHappened)
+                    {
+                        hitMesh.hitpoint = coordinate;
+                        hitMesh.normal = normalize(cross(minus(v1, v0), minus(v2, v0)));
+                        hitMesh.color = scene.materials[scene.meshes[k].material_id - 1].diffuse;
+                    }
+                }
+
+                if (hitSphereFinal.hitHappened)
+                {
+                    Vec3f color = hitSphere.color;
+                    image[i++] = color.x * 255;
+                    image[i++] = color.y * 255;
+                    image[i++] = color.z * 255;
+                }
+                else if (hitTriangle.hitHappened)
+                {
+                    Vec3f color = hitTriangle.color;
+                    image[i++] = color.x * 255;
+                    image[i++] = color.y * 255;
+                    image[i++] = color.z * 255;
+                }
+                else if (hitMesh.hitHappened)
+                {
+                    Vec3f color = hitMesh.color;
+                    image[i++] = color.x * 255;
+                    image[i++] = color.y * 255;
+                    image[i++] = color.z * 255;
                 }
                 else
                 {
-                    image[i++] = 0;
-                    image[i++] = 0;
-                    image[i++] = 0;
+                    image[i++] = scene.background_color.x;
+                    image[i++] = scene.background_color.y;
+                    image[i++] = scene.background_color.z;
                 }
             }
         }
