@@ -338,10 +338,63 @@ int main(int argc, char *argv[])
 
                 for (int k = 0; k < scene.point_lights.size(); k++)
                 {
-                    // point light diffuse
                     Vec3f lightPosition = scene.point_lights[k].position;
-                    Vec3f lightIntensity = scene.point_lights[k].intensity;
                     Vec3f lightDirection = normalize(minus(lightPosition, finalHit.hitpoint));
+
+                    // shadow ray
+                    Ray shadowRay = {finalHit.hitpoint, lightDirection};
+                    bool shadowHit = false;
+                    bool controller = false;
+                    for (int l = 0; l < scene.spheres.size(); l++)
+                    {
+                        Vec3f center = scene.vertex_data[scene.spheres[l].center_vertex_id - 1];
+                        float radius = scene.spheres[l].radius;
+                        Vec3f coordinate = raySphereIntersection(shadowRay, center, radius, shadowHit);
+                        if (shadowHit && distance(finalHit.hitpoint, coordinate) < distance(finalHit.hitpoint, lightPosition) && distance(finalHit.hitpoint, coordinate) > 0.001)
+                        {
+                            controller = true;
+                            break;
+                        }
+                    }
+                    if (controller)
+                    {
+                        continue;
+                    }
+                    for (int l = 0; l < scene.triangles.size(); l++)
+                    {
+                        Vec3f v0 = scene.vertex_data[scene.triangles[l].indices.v0_id - 1];
+                        Vec3f v1 = scene.vertex_data[scene.triangles[l].indices.v1_id - 1];
+                        Vec3f v2 = scene.vertex_data[scene.triangles[l].indices.v2_id - 1];
+                        Vec3f coordinate = rayTriangleIntersection(shadowRay, v0, v1, v2, shadowHit);
+                        if (shadowHit && distance(finalHit.hitpoint, coordinate) < distance(finalHit.hitpoint, lightPosition) && distance(finalHit.hitpoint, coordinate) > 0.001)
+                        {
+                            controller = true;
+                            break;
+                        }
+                    }
+                    if (controller)
+                    {
+                        continue;
+                    }
+                    for (int l = 0; l < scene.meshes.size(); l++)
+                    {
+                        Vec3f v0 = scene.vertex_data[scene.meshes[l].faces[0].v0_id - 1];
+                        Vec3f v1 = scene.vertex_data[scene.meshes[l].faces[0].v1_id - 1];
+                        Vec3f v2 = scene.vertex_data[scene.meshes[l].faces[0].v2_id - 1];
+                        Vec3f coordinate = rayMeshIntersection(shadowRay, scene, l, shadowHit);
+                        if (shadowHit && distance(finalHit.hitpoint, coordinate) < distance(finalHit.hitpoint, lightPosition) && distance(finalHit.hitpoint, coordinate) > 0.001)
+                        {
+                            controller = true;
+                            break;
+                        }
+                    }
+                    if (controller)
+                    {
+                        continue;
+                    }
+
+                    // point light diffuse
+                    Vec3f lightIntensity = scene.point_lights[k].intensity;
                     Vec3f diffuseCoefficient = finalHit.material.diffuse;
                     Vec3f normal = finalHit.normal;
 
@@ -358,13 +411,8 @@ int main(int argc, char *argv[])
                     float cosAlpha = std::max(0.0f, normalDotHalf);
                     Vec3f specularCoefficient = finalHit.material.specular;
                     float phongExponent = finalHit.material.phong_exponent;
-                    Vec3f specularRadiance = timesForColor(timesScalar(lightIntensity, oneOverDistanceSquare *
-                                                                                           pow(cosAlpha, phongExponent)),
-                                                           specularCoefficient);
+                    Vec3f specularRadiance = timesForColor(timesScalar(lightIntensity, oneOverDistanceSquare * pow(cosAlpha, phongExponent)), specularCoefficient);
                     finalColor = plus(finalColor, specularRadiance);
-
-                    // shadow ray
-                    
                 }
 
                 finalColor = plus(finalColor, timesForColor(finalHit.material.ambient, scene.ambient_light));
