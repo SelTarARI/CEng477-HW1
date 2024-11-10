@@ -10,6 +10,7 @@ typedef struct
 {
     Vec3f origin;
     Vec3f direction;
+    int depth = 0;
 } Ray;
 
 typedef struct
@@ -20,16 +21,19 @@ typedef struct
     bool hitHappened = false;
 } Hit;
 
+Vec3f colorFinder(Scene scene, Ray ray);
+
 Vec3f normalize(const Vec3f &vec)
 {
     float magnitude = std::sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
     Vec3f zero = {0, 0, 0};
-    Vec3f normalize = {vec.x / magnitude, vec.y / magnitude, vec.z / magnitude};
     if (magnitude == 0)
     {
         // Handle zero magnitude vector, could return zero vector or throw an error
         return zero;
     }
+    Vec3f normalize = {vec.x / magnitude, vec.y / magnitude, vec.z / magnitude};
+
     return normalize;
 }
 
@@ -185,7 +189,257 @@ Ray generateRay(Camera camera, int x, int y)
     float uCoord = left + (right - left) * (x + 0.5) / camera.image_width;
     float vCoord = top - (top - bottom) * (y + 0.5) / camera.image_height;
     Vec3f direction = plus(timesScalar(w, -camera.near_distance), plus(timesScalar(u, uCoord), timesScalar(v, vCoord)));
-    return {camera.position, direction};
+    Ray out;
+    out.origin = camera.position;
+    out.direction = normalize(direction);
+    return out;
+}
+
+Vec3f reflectionColor(Scene scene, Ray ray, Hit hit)
+{
+    Vec3f output = {0, 0, 0};
+    if (hit.material.is_mirror)
+    {
+        Ray reflectionRay;
+        reflectionRay.origin = hit.hitpoint;
+        reflectionRay.direction = normalize(plus(ray.direction, timesScalar(hit.normal, 2 * dot(negate(ray.direction), hit.normal))));
+        reflectionRay.depth = ray.depth + 1;
+        output = timesForColor(colorFinder(scene, reflectionRay), hit.material.mirror);
+    }
+    return output;
+}
+
+Vec3f shadeComputation(Scene scene, Ray ray, Hit hit)
+{
+    Vec3f output = timesForColor(hit.material.ambient, scene.ambient_light);
+
+    if (hit.material.is_mirror)
+    {
+        output = plus(output, reflectionColor(scene, ray, hit));
+    }
+
+    for (int k = 0; k < scene.point_lights.size(); k++)
+    {
+        Vec3f lightPosition = scene.point_lights[k].position;
+        Vec3f lightDirection = normalize(minus(lightPosition, hit.hitpoint));
+
+        // shadow ray
+        Ray shadowRay;
+        shadowRay.origin = hit.hitpoint;
+        shadowRay.direction = lightDirection;
+        bool shadowHit = false;
+        bool controller = false;
+        for (int l = 0; l < scene.spheres.size(); l++)
+        {
+            Vec3f center = scene.vertex_data[scene.spheres[l].center_vertex_id - 1];
+            float radius = scene.spheres[l].radius;
+            Vec3f coordinate = raySphereIntersection(shadowRay, center, radius, shadowHit);
+            if (shadowHit && distance(hit.hitpoint, coordinate) < distance(hit.hitpoint, lightPosition) && distance(hit.hitpoint, coordinate) > 0.001)
+            {
+                controller = true;
+                break;
+            }
+        }
+        if (controller)
+        {
+            continue;
+        }
+        for (int l = 0; l < scene.triangles.size(); l++)
+        {
+            Vec3f v0 = scene.vertex_data[scene.triangles[l].indices.v0_id - 1];
+            Vec3f v1 = scene.vertex_data[scene.triangles[l].indices.v1_id - 1];
+            Vec3f v2 = scene.vertex_data[scene.triangles[l].indices.v2_id - 1];
+            Vec3f coordinate = rayTriangleIntersection(shadowRay, v0, v1, v2, shadowHit);
+            if (shadowHit) //&& distance(hit.hitpoint, coordinate) < distance(hit.hitpoint, lightPosition) && distance(hit.hitpoint, coordinate) > 0.001)
+            {
+                controller = true;
+                break;
+            }
+        }
+        if (controller)
+        {
+            continue;
+        }
+        for (int l = 0; l < scene.meshes.size(); l++)
+        {
+            Vec3f v0 = scene.vertex_data[scene.meshes[l].faces[0].v0_id - 1];
+            Vec3f v1 = scene.vertex_data[scene.meshes[l].faces[0].v1_id - 1];
+            Vec3f v2 = scene.vertex_data[scene.meshes[l].faces[0].v2_id - 1];
+            Vec3f coordinate = rayMeshIntersection(shadowRay, scene, l, shadowHit);
+            if (shadowHit) //&& distance(hit.hitpoint, coordinate) < distance(hit.hitpoint, lightPosition) && distance(hit.hitpoint, coordinate) > 0.001)
+            {
+                controller = true;
+                break;
+            }
+        }
+        if (controller)
+        {
+            continue;
+        }
+
+        // point light diffuse
+        Vec3f lightIntensity = scene.point_lights[k].intensity;
+        Vec3f diffuseCoefficient = hit.material.diffuse;
+        Vec3f normal = hit.normal;
+
+        float normalDotLight = dot(normal, lightDirection);
+        float cosTheta = std::max(0.0f, normalDotLight);
+        float oneOverDistanceSquare = 1 / pow(distance(lightPosition, hit.hitpoint), 2);
+        Vec3f radiance = timesForColor(timesScalar(lightIntensity, oneOverDistanceSquare * cosTheta), diffuseCoefficient);
+        output = plus(output, radiance);
+
+        // specular reflection
+        Vec3f viewDirection = normalize(minus(ray.origin, hit.hitpoint));
+        Vec3f halfVector = normalize(plus(lightDirection, viewDirection));
+        float normalDotHalf = dot(normal, halfVector);
+        float cosAlpha = std::max(0.0f, normalDotHalf);
+        Vec3f specularCoefficient = hit.material.specular;
+        float phongExponent = hit.material.phong_exponent;
+        Vec3f specularRadiance = timesForColor(timesScalar(lightIntensity, oneOverDistanceSquare * pow(cosAlpha, phongExponent)), specularCoefficient);
+        output = plus(output, specularRadiance);
+    }
+    return output;
+}
+
+Vec3f colorFinder(Scene scene, Ray ray)
+{
+    if (ray.depth > scene.max_recursion_depth)
+    {
+        return {0, 0, 0};
+    }
+
+    Hit hitSphere;
+    Hit hitSphereFinal;
+    bool sphereHitFirst = true;
+
+    Hit hitTriangle;
+    Hit hitTriangleFinal;
+    bool triangleHitFirst = true;
+
+    Hit hitMesh;
+    Hit hitMeshFinal;
+    bool meshHitFirst = true;
+
+    for (int k = 0; k < scene.spheres.size(); k++)
+    {
+        Vec3f center = scene.vertex_data[scene.spheres[k].center_vertex_id - 1];
+        float radius = scene.spheres[k].radius;
+        Vec3f coordinate = raySphereIntersection(ray, center, radius, hitSphere.hitHappened);
+        if (hitSphere.hitHappened)
+        {
+            hitSphere.hitpoint = coordinate;
+            hitSphere.normal = normalize(minus(coordinate, center));
+            hitSphere.material = scene.materials[scene.spheres[k].material_id - 1];
+            if (sphereHitFirst)
+            {
+                hitSphereFinal.hitpoint = hitSphere.hitpoint;
+                hitSphereFinal.normal = hitSphere.normal;
+                hitSphereFinal.material = hitSphere.material;
+                hitSphereFinal.hitHappened = true;
+                sphereHitFirst = false;
+            }
+            else
+            {
+                if (distance(ray.origin, hitSphere.hitpoint) < distance(ray.origin, hitSphereFinal.hitpoint))
+                {
+                    hitSphereFinal.hitpoint = hitSphere.hitpoint;
+                    hitSphereFinal.normal = hitSphere.normal;
+                    hitSphereFinal.material = hitSphere.material;
+                    hitSphereFinal.hitHappened = true;
+                }
+            }
+        }
+    }
+
+    for (int k = 0; k < scene.triangles.size(); k++)
+    {
+        Vec3f v0 = scene.vertex_data[scene.triangles[k].indices.v0_id - 1];
+        Vec3f v1 = scene.vertex_data[scene.triangles[k].indices.v1_id - 1];
+        Vec3f v2 = scene.vertex_data[scene.triangles[k].indices.v2_id - 1];
+        Vec3f coordinate = rayTriangleIntersection(ray, v0, v1, v2, hitTriangle.hitHappened);
+        if (hitTriangle.hitHappened)
+        {
+            hitTriangle.hitpoint = coordinate;
+            hitTriangle.normal = normalize(cross(minus(v1, v0), minus(v2, v0)));
+            hitTriangle.material = scene.materials[scene.triangles[k].material_id - 1];
+            if (triangleHitFirst)
+            {
+                hitTriangleFinal.hitpoint = hitTriangle.hitpoint;
+                hitTriangleFinal.normal = hitTriangle.normal;
+                hitTriangleFinal.material = hitTriangle.material;
+                hitTriangleFinal.hitHappened = true;
+                triangleHitFirst = false;
+            }
+            else
+            {
+                if (distance(ray.origin, hitTriangle.hitpoint) < distance(ray.origin, hitTriangleFinal.hitpoint))
+                {
+                    hitTriangleFinal.hitpoint = hitTriangle.hitpoint;
+                    hitTriangleFinal.normal = hitTriangle.normal;
+                    hitTriangleFinal.material = hitTriangle.material;
+                    hitTriangleFinal.hitHappened = true;
+                }
+            }
+        }
+    }
+
+    for (int k = 0; k < scene.meshes.size(); k++)
+    {
+        Vec3f v0 = scene.vertex_data[scene.meshes[k].faces[0].v0_id - 1];
+        Vec3f v1 = scene.vertex_data[scene.meshes[k].faces[0].v1_id - 1];
+        Vec3f v2 = scene.vertex_data[scene.meshes[k].faces[0].v2_id - 1];
+        Vec3f coordinate = rayMeshIntersection(ray, scene, k, hitMesh.hitHappened);
+        if (hitMesh.hitHappened)
+        {
+            hitMesh.hitpoint = coordinate;
+            hitMesh.normal = normalize(cross(minus(v1, v0), minus(v2, v0)));
+            hitMesh.material = scene.materials[scene.meshes[k].material_id - 1];
+            if (meshHitFirst)
+            {
+                hitMeshFinal.hitpoint = hitMesh.hitpoint;
+                hitMeshFinal.normal = hitMesh.normal;
+                hitMeshFinal.material = hitMesh.material;
+                hitMeshFinal.hitHappened = true;
+                meshHitFirst = false;
+            }
+            else
+            {
+                if (distance(ray.origin, hitMesh.hitpoint) < distance(ray.origin, hitMeshFinal.hitpoint))
+                {
+                    hitMeshFinal.hitpoint = hitMesh.hitpoint;
+                    hitMeshFinal.normal = hitMesh.normal;
+                    hitMeshFinal.material = hitMesh.material;
+                    hitMeshFinal.hitHappened = true;
+                }
+            }
+        }
+    }
+
+    Hit finalHit = hitSphereFinal;
+
+    if (hitTriangleFinal.hitHappened & (!finalHit.hitHappened || distance(ray.origin, hitTriangleFinal.hitpoint) < distance(ray.origin, finalHit.hitpoint)))
+    {
+        finalHit = hitTriangleFinal;
+    }
+    if (hitMeshFinal.hitHappened & (!finalHit.hitHappened || distance(ray.origin, hitMeshFinal.hitpoint) < distance(ray.origin, finalHit.hitpoint)))
+    {
+        finalHit = hitMeshFinal;
+    }
+
+    if (finalHit.hitHappened)
+    {
+        return shadeComputation(scene, ray, finalHit);
+    }
+
+    else if (ray.depth == 0)
+    {
+        Vec3i color = scene.background_color;
+        return {float(color.x), float(color.y), float(color.z)};
+    }
+    else
+    {
+        return {0, 0, 0};
+    }
 }
 
 int main(int argc, char *argv[])
@@ -206,218 +460,7 @@ int main(int argc, char *argv[])
             for (int x = 0; x < width; ++x)
             {
                 Ray ray = generateRay(scene.cameras[j], x, y);
-
-                Hit hitSphere;
-                Hit hitSphereFinal;
-                bool sphereHitFirst = true;
-
-                Hit hitTriangle;
-                Hit hitTriangleFinal;
-                bool triangleHitFirst = true;
-
-                Hit hitMesh;
-                Hit hitMeshFinal;
-                bool meshHitFirst = true;
-
-                for (int k = 0; k < scene.spheres.size(); k++)
-                {
-                    Vec3f center = scene.vertex_data[scene.spheres[k].center_vertex_id - 1];
-                    float radius = scene.spheres[k].radius;
-                    Vec3f coordinate = raySphereIntersection(ray, center, radius, hitSphere.hitHappened);
-                    if (hitSphere.hitHappened)
-                    {
-                        hitSphere.hitpoint = coordinate;
-                        hitSphere.normal = normalize(minus(coordinate, center));
-                        hitSphere.material = scene.materials[scene.spheres[k].material_id - 1];
-                        if (sphereHitFirst)
-                        {
-                            hitSphereFinal.hitpoint = hitSphere.hitpoint;
-                            hitSphereFinal.normal = hitSphere.normal;
-                            hitSphereFinal.material = hitSphere.material;
-                            hitSphereFinal.hitHappened = true;
-                            sphereHitFirst = false;
-                        }
-                        else
-                        {
-                            if (distance(ray.origin, hitSphere.hitpoint) < distance(ray.origin, hitSphereFinal.hitpoint))
-                            {
-                                hitSphereFinal.hitpoint = hitSphere.hitpoint;
-                                hitSphereFinal.normal = hitSphere.normal;
-                                hitSphereFinal.material = hitSphere.material;
-                                hitSphereFinal.hitHappened = true;
-                            }
-                        }
-                    }
-                }
-
-                for (int k = 0; k < scene.triangles.size(); k++)
-                {
-                    Vec3f v0 = scene.vertex_data[scene.triangles[k].indices.v0_id - 1];
-                    Vec3f v1 = scene.vertex_data[scene.triangles[k].indices.v1_id - 1];
-                    Vec3f v2 = scene.vertex_data[scene.triangles[k].indices.v2_id - 1];
-                    Vec3f coordinate = rayTriangleIntersection(ray, v0, v1, v2, hitTriangle.hitHappened);
-                    if (hitTriangle.hitHappened)
-                    {
-                        hitTriangle.hitpoint = coordinate;
-                        hitTriangle.normal = normalize(cross(minus(v1, v0), minus(v2, v0)));
-                        hitTriangle.material = scene.materials[scene.triangles[k].material_id - 1];
-                        if (triangleHitFirst)
-                        {
-                            hitTriangleFinal.hitpoint = hitTriangle.hitpoint;
-                            hitTriangleFinal.normal = hitTriangle.normal;
-                            hitTriangleFinal.material = hitTriangle.material;
-                            hitTriangleFinal.hitHappened = true;
-                            triangleHitFirst = false;
-                        }
-                        else
-                        {
-                            if (distance(ray.origin, hitTriangle.hitpoint) < distance(ray.origin, hitTriangleFinal.hitpoint))
-                            {
-                                hitTriangleFinal.hitpoint = hitTriangle.hitpoint;
-                                hitTriangleFinal.normal = hitTriangle.normal;
-                                hitTriangleFinal.material = hitTriangle.material;
-                                hitTriangleFinal.hitHappened = true;
-                            }
-                        }
-                    }
-                }
-
-                for (int k = 0; k < scene.meshes.size(); k++)
-                {
-                    Vec3f v0 = scene.vertex_data[scene.meshes[k].faces[0].v0_id - 1];
-                    Vec3f v1 = scene.vertex_data[scene.meshes[k].faces[0].v1_id - 1];
-                    Vec3f v2 = scene.vertex_data[scene.meshes[k].faces[0].v2_id - 1];
-                    Vec3f coordinate = rayMeshIntersection(ray, scene, k, hitMesh.hitHappened);
-                    if (hitMesh.hitHappened)
-                    {
-                        hitMesh.hitpoint = coordinate;
-                        hitMesh.normal = normalize(cross(minus(v1, v0), minus(v2, v0)));
-                        hitMesh.material = scene.materials[scene.meshes[k].material_id - 1];
-                        if (meshHitFirst)
-                        {
-                            hitMeshFinal.hitpoint = hitMesh.hitpoint;
-                            hitMeshFinal.normal = hitMesh.normal;
-                            hitMeshFinal.material = hitMesh.material;
-                            hitMeshFinal.hitHappened = true;
-                            meshHitFirst = false;
-                        }
-                        else
-                        {
-                            if (distance(ray.origin, hitMesh.hitpoint) < distance(ray.origin, hitMeshFinal.hitpoint))
-                            {
-                                hitMeshFinal.hitpoint = hitMesh.hitpoint;
-                                hitMeshFinal.normal = hitMesh.normal;
-                                hitMeshFinal.material = hitMesh.material;
-                                hitMeshFinal.hitHappened = true;
-                            }
-                        }
-                    }
-                }
-
-                Hit finalHit = hitSphereFinal;
-
-                if (hitTriangleFinal.hitHappened & (!finalHit.hitHappened || distance(ray.origin, hitTriangleFinal.hitpoint) < distance(ray.origin, finalHit.hitpoint)))
-                {
-                    finalHit = hitTriangleFinal;
-                }
-                if (hitMeshFinal.hitHappened & (!finalHit.hitHappened || distance(ray.origin, hitMeshFinal.hitpoint) < distance(ray.origin, finalHit.hitpoint)))
-                {
-                    finalHit = hitMeshFinal;
-                }
-
-                if (!finalHit.hitHappened)
-                {
-                    Vec3i color = scene.background_color;
-                    image[i++] = color.x;
-                    image[i++] = color.y;
-                    image[i++] = color.z;
-                    continue;
-                }
-
-                Vec3f finalColor = {0, 0, 0};
-
-                for (int k = 0; k < scene.point_lights.size(); k++)
-                {
-                    Vec3f lightPosition = scene.point_lights[k].position;
-                    Vec3f lightDirection = normalize(minus(lightPosition, finalHit.hitpoint));
-
-                    // shadow ray
-                    Ray shadowRay = {finalHit.hitpoint, lightDirection};
-                    bool shadowHit = false;
-                    bool controller = false;
-                    for (int l = 0; l < scene.spheres.size(); l++)
-                    {
-                        Vec3f center = scene.vertex_data[scene.spheres[l].center_vertex_id - 1];
-                        float radius = scene.spheres[l].radius;
-                        Vec3f coordinate = raySphereIntersection(shadowRay, center, radius, shadowHit);
-                        if (shadowHit && distance(finalHit.hitpoint, coordinate) < distance(finalHit.hitpoint, lightPosition) && distance(finalHit.hitpoint, coordinate) > 0.001)
-                        {
-                            controller = true;
-                            break;
-                        }
-                    }
-                    if (controller)
-                    {
-                        continue;
-                    }
-                    for (int l = 0; l < scene.triangles.size(); l++)
-                    {
-                        Vec3f v0 = scene.vertex_data[scene.triangles[l].indices.v0_id - 1];
-                        Vec3f v1 = scene.vertex_data[scene.triangles[l].indices.v1_id - 1];
-                        Vec3f v2 = scene.vertex_data[scene.triangles[l].indices.v2_id - 1];
-                        Vec3f coordinate = rayTriangleIntersection(shadowRay, v0, v1, v2, shadowHit);
-                        if (shadowHit && distance(finalHit.hitpoint, coordinate) < distance(finalHit.hitpoint, lightPosition) && distance(finalHit.hitpoint, coordinate) > 0.001)
-                        {
-                            controller = true;
-                            break;
-                        }
-                    }
-                    if (controller)
-                    {
-                        continue;
-                    }
-                    for (int l = 0; l < scene.meshes.size(); l++)
-                    {
-                        Vec3f v0 = scene.vertex_data[scene.meshes[l].faces[0].v0_id - 1];
-                        Vec3f v1 = scene.vertex_data[scene.meshes[l].faces[0].v1_id - 1];
-                        Vec3f v2 = scene.vertex_data[scene.meshes[l].faces[0].v2_id - 1];
-                        Vec3f coordinate = rayMeshIntersection(shadowRay, scene, l, shadowHit);
-                        if (shadowHit && distance(finalHit.hitpoint, coordinate) < distance(finalHit.hitpoint, lightPosition) && distance(finalHit.hitpoint, coordinate) > 0.001)
-                        {
-                            controller = true;
-                            break;
-                        }
-                    }
-                    if (controller)
-                    {
-                        continue;
-                    }
-
-                    // point light diffuse
-                    Vec3f lightIntensity = scene.point_lights[k].intensity;
-                    Vec3f diffuseCoefficient = finalHit.material.diffuse;
-                    Vec3f normal = finalHit.normal;
-
-                    float normalDotLight = dot(normal, lightDirection);
-                    float cosTheta = std::max(0.0f, normalDotLight);
-                    float oneOverDistanceSquare = 1 / pow(distance(lightPosition, finalHit.hitpoint), 2);
-                    Vec3f radiance = timesForColor(timesScalar(lightIntensity, oneOverDistanceSquare * cosTheta), diffuseCoefficient);
-                    finalColor = plus(finalColor, radiance);
-
-                    // specular reflection
-                    Vec3f viewDirection = normalize(minus(ray.origin, finalHit.hitpoint));
-                    Vec3f halfVector = normalize(plus(lightDirection, viewDirection));
-                    float normalDotHalf = dot(normal, halfVector);
-                    float cosAlpha = std::max(0.0f, normalDotHalf);
-                    Vec3f specularCoefficient = finalHit.material.specular;
-                    float phongExponent = finalHit.material.phong_exponent;
-                    Vec3f specularRadiance = timesForColor(timesScalar(lightIntensity, oneOverDistanceSquare * pow(cosAlpha, phongExponent)), specularCoefficient);
-                    finalColor = plus(finalColor, specularRadiance);
-                }
-
-                finalColor = plus(finalColor, timesForColor(finalHit.material.ambient, scene.ambient_light));
-
-                Vec3f color = finalColor;
+                Vec3f color = colorFinder(scene, ray);
                 image[i++] = color.x > 255 ? 255 : color.x;
                 image[i++] = color.y > 255 ? 255 : color.y;
                 image[i++] = color.z > 255 ? 255 : color.z;
