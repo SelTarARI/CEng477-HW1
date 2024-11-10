@@ -250,7 +250,7 @@ Vec3f shadeComputation(Scene scene, Ray ray, Hit hit)
             Vec3f v1 = scene.vertex_data[scene.triangles[l].indices.v1_id - 1];
             Vec3f v2 = scene.vertex_data[scene.triangles[l].indices.v2_id - 1];
             Vec3f coordinate = rayTriangleIntersection(shadowRay, v0, v1, v2, shadowHit);
-            if (shadowHit) //&& distance(hit.hitpoint, coordinate) < distance(hit.hitpoint, lightPosition) && distance(hit.hitpoint, coordinate) > 0.001)
+            if (shadowHit && distance(hit.hitpoint, coordinate) < distance(hit.hitpoint, lightPosition) && distance(hit.hitpoint, coordinate) > scene.shadow_ray_epsilon)
             {
                 controller = true;
                 break;
@@ -266,7 +266,7 @@ Vec3f shadeComputation(Scene scene, Ray ray, Hit hit)
             Vec3f v1 = scene.vertex_data[scene.meshes[l].faces[0].v1_id - 1];
             Vec3f v2 = scene.vertex_data[scene.meshes[l].faces[0].v2_id - 1];
             Vec3f coordinate = rayMeshIntersection(shadowRay, scene, l, shadowHit);
-            if (shadowHit) //&& distance(hit.hitpoint, coordinate) < distance(hit.hitpoint, lightPosition) && distance(hit.hitpoint, coordinate) > 0.001)
+            if (shadowHit && distance(hit.hitpoint, coordinate) < distance(hit.hitpoint, lightPosition) && distance(hit.hitpoint, coordinate) > scene.shadow_ray_epsilon)
             {
                 controller = true;
                 break;
@@ -284,11 +284,17 @@ Vec3f shadeComputation(Scene scene, Ray ray, Hit hit)
 
         float normalDotLight = dot(normal, lightDirection);
         float cosTheta = std::max(0.0f, normalDotLight);
-        float oneOverDistanceSquare = 1 / pow(distance(lightPosition, hit.hitpoint), 2);
+        float LightHitDistance = distance(lightPosition, hit.hitpoint);
+        float LightHitDistanceSquare = LightHitDistance * LightHitDistance;
+        float oneOverDistanceSquare = 1.0 / LightHitDistanceSquare; // 1/d^2
         Vec3f radiance = timesForColor(timesScalar(lightIntensity, oneOverDistanceSquare * cosTheta), diffuseCoefficient);
         output = plus(output, radiance);
 
         // specular reflection
+        if(dot(normal, lightDirection) <= 0)
+        {
+            continue;
+        }
         Vec3f viewDirection = normalize(minus(ray.origin, hit.hitpoint));
         Vec3f halfVector = normalize(plus(lightDirection, viewDirection));
         float normalDotHalf = dot(normal, halfVector);
